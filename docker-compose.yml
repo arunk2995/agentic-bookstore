@@ -1,0 +1,74 @@
+version: '3.9'
+
+services:
+  # ============================================================
+  # PostgreSQL Database
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: bookstore-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bookstore}
+      POSTGRES_USER: ${POSTGRES_USER:-bookstore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bookstore123}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bookstore}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Bookstore Application
+  # ============================================================
+  bookstore-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bookstore-app
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    environment:
+      # Database
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-bookstore}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-bookstore}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-bookstore123}
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET:-bookstore-jwt-secret-change-in-production-must-be-256-bits}
+      JWT_ACCESS_TOKEN_EXPIRY: ${JWT_ACCESS_TOKEN_EXPIRY:-3600}
+      JWT_REFRESH_TOKEN_EXPIRY: ${JWT_REFRESH_TOKEN_EXPIRY:-86400}
+      JWT_ISSUER: ${JWT_ISSUER:-agentic-bookstore}
+
+      # Agent configuration
+      AGENT_MOCK_MODE: ${AGENT_MOCK_MODE:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-mock-key}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+
+      # Mock integrations (set to false to use real providers)
+      PAYMENT_MOCK_MODE: ${PAYMENT_MOCK_MODE:-true}
+      EMAIL_MOCK_MODE: ${EMAIL_MOCK_MODE:-true}
+      SHIPPING_MOCK_MODE: ${SHIPPING_MOCK_MODE:-true}
+
+      # Application settings
+      SERVER_PORT: 8080
+      LOW_STOCK_THRESHOLD: ${LOW_STOCK_THRESHOLD:-10}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health/liveness"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
